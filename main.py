@@ -8,8 +8,9 @@ from groq import Groq
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
-from aiogram.types import FSInputFile, LabeledPrice, PreCheckoutQuery
+from aiogram.types import LabeledPrice, PreCheckoutQuery
 from aiogram.client.default import DefaultBotProperties
+from aiohttp import web  # <--- Yangi qo'shimcha
 
 # ==========================================================
 # 1. SOZLAMALAR
@@ -24,6 +25,21 @@ bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
 user_context = {}
 
+# --- RENDER UCHUN SOXTA WEB SERVER ---
+async def handle(request):
+    return web.Response(text="Bot is running!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    # Render PORT muhit o'zgaruvchisini beradi, bo'lmasa 8080 ni oladi
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"🚀 Health check server started on port {port}")
+
 # ==========================================================
 # 2. MA'LUMOTLAR BAZASI
 # ==========================================================
@@ -34,7 +50,6 @@ def init_db():
                       (user_id INTEGER PRIMARY KEY, username TEXT, is_premium INTEGER DEFAULT 0)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS masters 
                       (id INTEGER PRIMARY KEY, name TEXT, profession TEXT, phone TEXT, city TEXT)''')
-    
     if cursor.execute("SELECT count(*) FROM masters").fetchone()[0] == 0:
         cursor.executemany("INSERT INTO masters VALUES (?,?,?,?,?)", [
             (1, "Ali Usta", "Santexnik", "+998901234567", "Toshkent"),
@@ -81,19 +96,9 @@ async def start(message: types.Message):
     register_user(message.from_user.id, message.from_user.username)
     await message.answer(
         f"👋 <b>Assalomu alaykum, {message.from_user.first_name}!</b>\n\n"
-        "Men <b>HomeFix AI</b> — uyingizdagi texnik muammolarni hal qilishda yordam beraman.",
+        "Men <b>HomeFix AI</b> — uyingizdagi muammolarni AI yordamida hal qilaman.",
         reply_markup=main_menu()
     )
-
-@dp.message(Command("admin"))
-async def admin_panel(message: types.Message):
-    if message.from_user.id == ADMIN_ID:
-        conn = sqlite3.connect('homefix_pro.db')
-        count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-        conn.close()
-        await message.answer(f"📊 <b>Admin Hisoboti:</b>\n\n👥 Jami foydalanuvchilar: {count} ta")
-    else:
-        await message.answer("🔒 Siz admin emassiz.")
 
 @dp.message(F.text == "📍 Yaqin usta")
 async def find_master(message: types.Message):
@@ -126,44 +131,15 @@ async def handle_photo(message: types.Message):
     finally:
         if os.path.exists(file_path): os.remove(file_path)
 
-@dp.message(F.voice)
-async def handle_voice(message: types.Message):
-    wait = await message.answer("🎧 <i>Eshitmoqdaman...</i>")
-    file_path = f"voice_{message.from_user.id}.ogg"
-    try:
-        file = await bot.get_file(message.voice.file_id)
-        await bot.download_file(file.file_path, file_path)
-        with open(file_path, "rb") as f:
-            transcription = client.audio.transcriptions.create(
-                file=(file_path, f.read()),
-                model="whisper-large-v3",
-                response_format="text"
-            )
-        sys_msg = {"role": "system", "content": "Faqat O'ZBEK tilida javob beruvchi usta bo'l."}
-        update_context(message.from_user.id, "user", transcription)
-        history = [sys_msg] + list(user_context[message.from_user.id])
-        ai_reply = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=history
-        ).choices[0].message.content
-        await wait.edit_text(f"🤖 <b>Javob:</b> {ai_reply}")
-    except Exception as e:
-        await wait.edit_text(f"❌ Xatolik: {e}")
-    finally:
-        if os.path.exists(file_path): os.remove(file_path)
-
 @dp.message()
 async def chat_logic(message: types.Message):
     if not message.text: return
     wait = await message.answer("💬 <i>Yozmoqda...</i>")
     try:
         update_context(message.from_user.id, "user", message.text)
-        sys_msg = {"role": "system", "content": "Sen HomeFix AI professional ustasisan. Faqat O'ZBEK tilida javob ber."}
+        sys_msg = {"role": "system", "content": "Sen HomeFix AI profesional ustasisan. Faqat O'ZBEK tilida javob ber."}
         history = [sys_msg] + list(user_context[message.from_user.id])
-        completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=history
-        )
+        completion = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=history)
         response = completion.choices[0].message.content
         update_context(message.from_user.id, "assistant", response)
         await wait.edit_text(response)
@@ -176,7 +152,8 @@ async def chat_logic(message: types.Message):
 async def main():
     init_db()
     logging.basicConfig(level=logging.INFO)
-    await dp.start_polling(bot)
+    # Botingizni va soxta serverni bir vaqtda ishga tushiramiz
+    await asyncio.gather(start_web_server(), dp.start_polling(bot))
 
 if __name__ == "__main__":
     asyncio.run(main())
