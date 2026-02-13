@@ -213,7 +213,7 @@ async def ai_vision(message: types.Message):
         
         # ENG KUCHLI VISION MODEL (90b)
         completion = client.chat.completions.create(
-            model="llama-3.2-90b-vision-preview", 
+            model="meta-llama/llama-4-scout-17b-16e-instruct", 
             messages=messages,
             temperature=0.6,
             max_tokens=1024
@@ -278,3 +278,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
