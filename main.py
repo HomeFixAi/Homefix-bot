@@ -198,7 +198,7 @@ async def ai_vision(message: types.Message):
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
             ]}
         ]
-        completion = client.chat.completions.create(model="llama-3.2-11b-vision-preview", messages=messages)
+        completion = client.chat.completions.create(model="meta-llama/llama-4-scout-17b-16e-instruct", messages=messages)
         await wait.edit_text(f"📸 <b>Xulosa:</b>\n\n{completion.choices[0].message.content}")
     except Exception as e:
         await wait.edit_text(f"❌ Xatolik: {e}")
@@ -265,3 +265,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
