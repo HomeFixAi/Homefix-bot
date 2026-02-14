@@ -19,6 +19,9 @@ from duckduckgo_search import DDGS
 BOT_TOKEN = "7978174707:AAFjHjK1tB9AsY1yloTS-9vmykiJ8BacZPs"
 PAYMENT_TOKEN = "371317599:TEST:1770638863894" 
 GROQ_API_KEY = "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"
+
+# ADMIN ID (Sizning ID raqamingiz)
+# Bu ID egasidan hech qachon pul so'ralmaydi
 ADMIN_ID = 1967786876 
 
 client = Groq(api_key=GROQ_API_KEY)
@@ -47,10 +50,8 @@ async def start_web_server():
 def init_db():
     conn = sqlite3.connect('homefix_pro.db')
     cursor = conn.cursor()
-    # Foydalanuvchilar jadvali
     cursor.execute('''CREATE TABLE IF NOT EXISTS users 
                       (user_id INTEGER PRIMARY KEY, username TEXT, full_name TEXT, is_premium INTEGER DEFAULT 0, joined_date TEXT)''')
-    # Ustalar jadvali (YANGI)
     cursor.execute('''CREATE TABLE IF NOT EXISTS masters 
                       (user_id INTEGER PRIMARY KEY, full_name TEXT, specialty TEXT, phone TEXT)''')
     conn.commit()
@@ -69,7 +70,7 @@ def get_user_data(user_id):
     cursor = conn.cursor()
     user = cursor.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
-    return user # user[3] bu is_premium
+    return user 
 
 def set_premium(user_id):
     conn = sqlite3.connect('homefix_pro.db')
@@ -98,9 +99,9 @@ def encode_image(image_path):
 # ==========================================================
 def main_menu_kb():
     kb = ReplyKeyboardBuilder()
-    kb.button(text="🛠 Muammo yechish")       # Hamma uchun
-    kb.button(text="🧮 Material Hisoblash")   # PREMIUM
-    kb.button(text="👷‍♂️ Men Ustaman")          # Baza yig'ish
+    kb.button(text="🛠 Muammo yechish")
+    kb.button(text="🧮 Material Hisoblash")
+    kb.button(text="👷‍♂️ Men Ustaman")
     kb.button(text="💎 Premium Panel")
     kb.button(text="👤 Profilim")
     kb.adjust(2, 2, 1)
@@ -139,24 +140,27 @@ def calc_menu_kb():
 async def start(message: types.Message):
     init_db()
     register_user(message.from_user)
-    await message.answer(
-        f"🏠 <b>Assalomu alaykum, {message.from_user.first_name}!</b>\n\n"
-        "Men <b>HomeFix Pro</b> — uyingizdagi Sun'iy Ong yordamchisiman.\n\n"
-        "🔻 <b>Bepul imkoniyatlar:</b>\n"
-        "• Savol-javob va Internet qidiruvi\n"
-        "• Usta bo'lib ro'yxatdan o'tish\n\n"
-        "💎 <b>Premium imkoniyatlar:</b>\n"
-        "• 📸 Rasm orqali diagnostika (Vision)\n"
-        "• 🧮 Material hisoblash kalkulyatori",
-        reply_markup=main_menu_kb()
-    )
+    
+    # Adminga maxsus salom
+    welcome_text = ""
+    if message.from_user.id == ADMIN_ID:
+        welcome_text = f"👑 <b>Xush kelibsiz, Xo'jayin!</b>\nSizga barcha Premium funksiyalar ochiq."
+    else:
+        welcome_text = (f"🏠 <b>Assalomu alaykum, {message.from_user.first_name}!</b>\n\n"
+                        "Men <b>HomeFix Pro</b> — uyingizdagi Sun'iy Ong yordamchisiman.")
+    
+    await message.answer(welcome_text, reply_markup=main_menu_kb())
 
 # --- PROFIL ---
 @dp.message(F.text == "👤 Profilim")
 async def my_profile(message: types.Message):
     user = get_user_data(message.from_user.id)
     if user:
-        status = "🌟 PREMIUM" if user[3] else "Oddiy"
+        if message.from_user.id == ADMIN_ID:
+            status = "👑 ADMIN (GOD MODE)"
+        else:
+            status = "🌟 PREMIUM" if user[3] else "Oddiy"
+            
         text = (f"📂 <b>Sizning Profilingiz:</b>\n\n"
                 f"👤 Ism: {user[2]}\n"
                 f"🆔 ID: {user[0]}\n"
@@ -167,10 +171,12 @@ async def my_profile(message: types.Message):
 # --- PREMIUM PANEL ---
 @dp.message(F.text == "💎 Premium Panel")
 async def premium_panel(message: types.Message):
+    # ADMIN UCHUN TEKIN
+    if message.from_user.id == ADMIN_ID:
+        await message.answer("👑 Siz Adminsiz! Sizga to'lov shart emas, mazza qilib ishlating.")
+        return
+
     text = ("💎 <b>Premium Statusga o'ting!</b>\n\n"
-            "⚠️ <i>Hozir sizda Rasm tahlili va Kalkulyator yopiq.</i>\n\n"
-            "✅ <b>Smart Vision:</b> Rasmga qarab muammoni va narxni aytadi.\n"
-            "✅ <b>Kalkulyator:</b> Remont xarajatini hisoblab beradi.\n\n"
             "💰 <b>Narxi: 50,000 so'm / oy</b>")
     await message.answer(text, reply_markup=premium_kb())
 
@@ -195,9 +201,9 @@ async def checkout_process(q: PreCheckoutQuery):
 @dp.message(F.successful_payment)
 async def success_pay(message: types.Message):
     set_premium(message.from_user.id)
-    await message.answer("🎉 <b>Tabriklaymiz!</b> Siz endi Premium a'zosiz!\nBarcha funksiyalar ochildi.")
+    await message.answer("🎉 <b>Tabriklaymiz!</b> Siz endi Premium a'zosiz!")
 
-# --- YANGI: MEN USTAMAN (BAZA YIG'ISH - BEPUL) ---
+# --- MEN USTAMAN ---
 @dp.message(F.text == "👷‍♂️ Men Ustaman")
 async def master_start(message: types.Message):
     await message.answer("🤝 Jamoamizga xush kelibsiz! Sohangizni tanlang:", reply_markup=master_reg_kb())
@@ -205,9 +211,10 @@ async def master_start(message: types.Message):
 @dp.message(F.text.in_({"🚰 Santexnik", "⚡ Elektrik", "❄️ Maishiy Texnika", "🏠 Universal Usta"}))
 async def master_save(message: types.Message):
     register_master_db(message.from_user.id, message.from_user.full_name, message.text)
-    await message.answer("✅ <b>Qabul qilindi!</b>\nSizni bazaga qo'shdik. Buyurtma bo'lsa xabar beramiz.", reply_markup=main_menu_kb())
-    # Adminga xabar
-    await bot.send_message(ADMIN_ID, f"🔔 YANGI USTA:\n{message.from_user.full_name} - {message.text}")
+    await message.answer("✅ <b>Qabul qilindi!</b>", reply_markup=main_menu_kb())
+    # O'z o'ziga xabar yubormaslik uchun tekshiramiz
+    if message.from_user.id != ADMIN_ID:
+        await bot.send_message(ADMIN_ID, f"🔔 YANGI USTA:\n{message.from_user.full_name} - {message.text}")
 
 @dp.message(F.text == "🔙 Bosh menyu")
 async def back_main(message: types.Message):
@@ -215,13 +222,12 @@ async def back_main(message: types.Message):
 
 @dp.message(F.text == "🛠 Muammo yechish")
 async def ask_problem(message: types.Message):
-    await message.answer("Men eshitaman! \n🎤 <b>Gapiring</b> (Ovozli xabar),\n📸 <b>Rasm yuboring</b> (Premium),\n📝 Yoki <b>yozing</b>.")
+    await message.answer("Men eshitaman! \n🎤 <b>Gapiring</b> (Ovozli xabar),\n📸 <b>Rasm yuboring</b>,\n📝 Yoki <b>yozing</b>.")
 
 # ==========================================================
 # 6. SUN'IY ONG (AI) QISMI + KALKULYATOR
 # ==========================================================
 
-# --- YANGI QISM: INTERNET QIDIRUV TIZIMI ---
 def search_internet(query):
     try:
         with DDGS() as ddgs:
@@ -230,13 +236,14 @@ def search_internet(query):
             return "\n".join([f"- {r['title']}: {r['body']} ({r['href']})" for r in results])
     except Exception as e: return str(e)
 
-# 1. KALKULYATOR (FAQAT PREMIUM UCHUN!)
+# 1. KALKULYATOR (ADMIN + PREMIUM)
 @dp.message(F.text == "🧮 Material Hisoblash")
 async def open_calc(message: types.Message):
-    # TEKSHIRISH: User Premiummi?
     user = get_user_data(message.from_user.id)
-    if not user or user[3] == 0: # 0 = Oddiy
-        await message.answer("🔒 <b>Bu funksiya faqat PREMIUM a'zolar uchun!</b>\n\nRemont xarajatini aniq hisoblash uchun obuna bo'ling.", reply_markup=premium_kb())
+    
+    # TEKSHIRUV: Agar Admin EMAS bo'lsa VA Premium bo'lmasa -> Bloklash
+    if message.from_user.id != ADMIN_ID and (not user or user[3] == 0):
+        await message.answer("🔒 <b>Bu funksiya faqat PREMIUM a'zolar uchun!</b>", reply_markup=premium_kb())
         return
 
     await message.answer("🧮 Nima hisoblaymiz?", reply_markup=calc_menu_kb())
@@ -246,12 +253,13 @@ async def calc_process(message: types.Message):
     update_context(message.from_user.id, "system", f"Kalkulyator: {message.text}")
     await message.answer(f"✅ <b>{message.text}</b> tanlandi.\nXona o'lchamini yozing (masalan: 20 kv yoki 4x5 metr):", reply_markup=types.ReplyKeyboardRemove())
 
-# 2. RASM TAHLILI (FAQAT PREMIUM UCHUN!)
+# 2. RASM TAHLILI (ADMIN + PREMIUM)
 @dp.message(F.photo)
 async def ai_vision(message: types.Message):
-    # TEKSHIRISH: User Premiummi?
     user = get_user_data(message.from_user.id)
-    if not user or user[3] == 0:
+    
+    # TEKSHIRUV: Admin EMAS va Premium YO'Q bo'lsa -> Bloklash
+    if message.from_user.id != ADMIN_ID and (not user or user[3] == 0):
         await message.answer("🔒 <b>Rasm tahlili faqat PREMIUM a'zolar uchun!</b>\n\nMen rasmga qarab muammoni, narxni va yechimni aytishim uchun obuna bo'ling.", reply_markup=premium_kb())
         return
 
@@ -267,7 +275,6 @@ async def ai_vision(message: types.Message):
         1. Xavfsizlikni tekshir.
         2. Nima buzilganini va modelini aniqla (stikerlarni o'qi).
         3. O'zbekiston bozoridagi real narxni ayt.
-        4. Javobni lo'nda qilib O'zbek tilida yoz.
         """
 
         messages = [{"role": "user", "content": [
@@ -276,26 +283,23 @@ async def ai_vision(message: types.Message):
         ]}]
         
         completion = client.chat.completions.create(
-            model="llama-3.2-90b-vision-preview", # Barqaror model
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
             messages=messages, temperature=0.5, max_tokens=1024
         )
         response = completion.choices[0].message.content
-        await wait.edit_text(f"🔧 <b>XULOSA:</b>\n\n{response}")
+        
+        # XATO TUZATILDI: edit_text o'rniga delete + answer
+        await wait.delete()
+        await message.answer(f"🔧 <b>XULOSA:</b>\n\n{response}", reply_markup=main_menu_kb())
+
     except Exception as e:
         await wait.edit_text(f"❌ Xatolik: {e}")
     finally:
         if os.path.exists(file_path): os.remove(file_path)
 
-# 3. UNIVERSAL CHAT (HAMMA UCHUN, LEKIN KALKULYATORNI HAM QAMRAB OLADI)
+# 3. UNIVERSAL CHAT
 @dp.message(F.text | F.voice)
 async def ai_agent(message: types.Message):
-    # Kalkulyator rejimini tekshirish
-    context_list = list(user_context.get(message.from_user.id, []))
-    is_calc_mode = any("Kalkulyator" in str(item) for item in context_list)
-    
-    # Agar kalkulyator rejimi bo'lsa va user Premium bo'lmasa -> Bloklash shart emas, chunki menyudan o'tolmaydi.
-    # Lekin baribir ehtiyot shart.
-    
     wait = await message.answer("🌐 <b>Yechim qidiryapman...</b>")
     try:
         user_input = message.text
@@ -306,23 +310,19 @@ async def ai_agent(message: types.Message):
             with open(file_path, "rb") as f:
                 user_input = client.audio.transcriptions.create(file=(file_path, f.read()), model="whisper-large-v3").text
             os.remove(file_path)
-            await message.answer(f"🗣 <b>Savol:</b> {user_input}")
+            # Ovozni tanib olgach, xabar beramiz
+            await message.answer(f"🗣 <b>Siz aytdingiz:</b> {user_input}")
 
-        # Search
+        # Search logic
         keywords = ["narx", "qancha", "sotib", "texnomart", "olx", "bozor", "ob-havo", "dollar"]
         search_result = ""
         if any(word in user_input.lower() for word in keywords):
             search_result = search_internet(user_input)
 
-        # Prompt
         sys_prompt = f"""
         Sen "HomeFix AI" yordamchisisan.
         Internet ma'lumoti: {search_result}
-        
-        Vazifa:
-        1. Agar foydalanuvchi "Kalkulyator" rejimida bo'lsa (o'lcham yozsa), unga materialni hisoblab ber (faqat Premium userlar uchun aslida, lekin bu yerda hisoblab berovur, agar menyudan o'tgan bo'lsa).
-        2. Agar oddiy savol bo'lsa, internetdan yoki o'z bilimingdan javob ber.
-        3. Narxlarni so'rasa, "1 dona" yoki "1 kub" farqini tushuntir.
+        Vazifa: Aniq, lo'nda javob ber. Narxlarni so'rasa '1 dona' yoki '1 kub' farqini tushuntir.
         """
         
         update_context(message.from_user.id, "user", user_input)
@@ -333,11 +333,14 @@ async def ai_agent(message: types.Message):
         response = completion.choices[0].message.content
         update_context(message.from_user.id, "assistant", response)
         
-        markup = main_menu_kb() # Har doim menyuni qaytaramiz
-        await wait.edit_text(response, reply_markup=markup)
+        # XATO TUZATILDI: edit_text o'rniga delete + answer
+        await wait.delete()
+        await message.answer(response, reply_markup=main_menu_kb())
 
     except Exception as e:
-        await wait.edit_text(f"❌ Xatolik: {e}")
+        # Xatolik bo'lsa ham menyuni qaytarish kerak
+        await wait.delete()
+        await message.answer(f"❌ Xatolik yuz berdi: {e}", reply_markup=main_menu_kb())
 
 # ==========================================================
 # 7. ISHGA TUSHIRISH
