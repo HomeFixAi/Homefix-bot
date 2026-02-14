@@ -11,16 +11,15 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from aiogram.types import FSInputFile, LabeledPrice, PreCheckoutQuery
 from aiogram.client.default import DefaultBotProperties
 from aiohttp import web
+# --- YANGI KUTUBXONA ---
+from duckduckgo_search import DDGS 
 
 # ==========================================================
 # 1. SOZLAMALAR (KALITLAR)
 # ==========================================================
-# DIQQAT: Bu yerga o'z tokenlaringizni to'g'ri qo'ying
 BOT_TOKEN = "7978174707:AAFjHjK1tB9AsY1yloTS-9vmykiJ8BacZPs"
 PAYMENT_TOKEN = "371317599:TEST:1770638863894" 
 GROQ_API_KEY = "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"
-
-# Admin ID (Sizning ID raqamingiz - botga /start bosganda chiqadi, shuni yozing)
 ADMIN_ID = 1967786876 
 
 client = Groq(api_key=GROQ_API_KEY)
@@ -49,7 +48,6 @@ async def start_web_server():
 def init_db():
     conn = sqlite3.connect('homefix_pro.db')
     cursor = conn.cursor()
-    # Foydalanuvchilar jadvali
     cursor.execute('''CREATE TABLE IF NOT EXISTS users 
                       (user_id INTEGER PRIMARY KEY, username TEXT, full_name TEXT, is_premium INTEGER DEFAULT 0, joined_date TEXT)''')
     conn.commit()
@@ -76,10 +74,9 @@ def set_premium(user_id):
     conn.commit()
     conn.close()
 
-# Context (Xotira) funksiyasi
 def update_context(user_id, role, content):
     if user_id not in user_context:
-        user_context[user_id] = deque(maxlen=5) # Oxirgi 5 ta gapni eslab qoladi
+        user_context[user_id] = deque(maxlen=5) 
     user_context[user_id].append({"role": role, "content": content})
 
 def encode_image(image_path):
@@ -91,7 +88,7 @@ def encode_image(image_path):
 # ==========================================================
 def main_menu_kb():
     kb = ReplyKeyboardBuilder()
-    kb.button(text="🛠 Muammo yechish") # AI
+    kb.button(text="🛠 Muammo yechish") 
     kb.button(text="👤 Profilim")
     kb.button(text="💎 Premium Panel")
     kb.button(text="📞 Usta kerak")
@@ -118,7 +115,6 @@ async def start(message: types.Message):
         reply_markup=main_menu_kb()
     )
 
-# --- PROFIL ---
 @dp.message(F.text == "👤 Profilim")
 async def my_profile(message: types.Message):
     user = get_user_data(message.from_user.id)
@@ -131,7 +127,6 @@ async def my_profile(message: types.Message):
                 f"📅 A'zo bo'lgan sana: {user[4]}")
         await message.answer(text)
 
-# --- PREMIUM SOTIB OLISH ---
 @dp.message(F.text == "💎 Premium Panel")
 async def premium_panel(message: types.Message):
     text = ("💎 <b>HomeFix Premium - Shaxsiy Muhandisingiz</b>\n\n"
@@ -151,7 +146,7 @@ async def buy_click(callback: types.CallbackQuery):
         payload="premium_sub",
         provider_token=PAYMENT_TOKEN,
         currency="uzs",
-        prices=[LabeledPrice(label="Obuna", amount=5000000)], # 50,000 so'm
+        prices=[LabeledPrice(label="Obuna", amount=5000000)], 
         start_parameter="premium-sub"
     )
     await callback.answer()
@@ -165,7 +160,6 @@ async def success_pay(message: types.Message):
     set_premium(message.from_user.id)
     await message.answer("🎉 <b>Tabriklaymiz!</b> Siz endi Premium a'zosiz!\nEndi rasm yuborib, to'liq tahlil olishingiz mumkin.")
 
-# --- USTA QIDIRISH (AI ROUTING) ---
 @dp.message(F.text == "📞 Usta kerak")
 async def find_master(message: types.Message):
     await message.answer("📍 Iltimos, lokatsiyangizni yuboring yoki manzilingizni yozing. Men eng yaqin ustani qidiraman...")
@@ -175,10 +169,26 @@ async def ask_problem(message: types.Message):
     await message.answer("Men eshitaman! \n🎤 <b>Gapiring</b> (Ovozli xabar),\n📸 <b>Rasm yuboring</b>,\n📝 Yoki <b>yozing</b>.")
 
 # ==========================================================
-# 6. SUN'IY ONG (AI) QISMI - ENG MUHIM JOYI
+# 6. SUN'IY ONG (AI) QISMI
 # ==========================================================
 
-# A) RASM TAHLILI (VISION - SENIOR ENGINEER)
+# --- YANGI QISM: INTERNET QIDIRUV TIZIMI ---
+def search_internet(query):
+    """Internetdan real vaqtda ma'lumot qidirish"""
+    try:
+        with DDGS() as ddgs:
+            # 3 ta eng yaxshi natijani olamiz
+            results = list(ddgs.text(query, region="uz-uz", max_results=3))
+            if not results:
+                return "Internetdan aniq ma'lumot topilmadi."
+            
+            # Natijalarni chiroyli matn qilamiz
+            search_summary = "\n".join([f"- {r['title']}: {r['body']} (Manba: {r['href']})" for r in results])
+            return search_summary
+    except Exception as e:
+        return f"Qidiruvda xatolik: {e}"
+
+# A) RASM TAHLILI (VISION)
 @dp.message(F.photo)
 async def ai_vision(message: types.Message):
     wait = await message.answer("🧐 <b>Rasm tahlil qilinmoqda...</b>\n<i>(Men 20 yillik tajribali muhandis sifatida ko'ryapman)</i>")
@@ -189,18 +199,13 @@ async def ai_vision(message: types.Message):
         await bot.download_file(photo.file_path, file_path)
         base64_image = encode_image(file_path)
         
-        # MUKAMMAL SYSTEM PROMPT
         system_instruction = """
         Sen HomeFix kompaniyasining Bosh Muhandisisan. Vazifang: Rasmdagi texnik muammoni aniqlash.
-
         QOIDALAR:
-        1. XAVFSIZLIK: Agar rasmda ochiq simlar, gaz yoki suv toshqini bo'lsa, birinchi bo'lib "OGOHLANTIRISH" (qizil rangda) ber.
-        2. TASHXIS: Nima buzilgan? Aniq texnik nomini ayt (masalan: "Smesitel kartriji" yoki "Avtomat o'chirgich").
-        3. YECHIM:
-           - Oddiy bo'lsa: Qanday tuzatishni tushuntir.
-           - Qiyin bo'lsa: "Mutaxassis chaqiring" de va qaysi usta kerakligini ayt.
-        4. NARX: O'zbekiston bozoridagi o'rtacha narxni (ehtiyot qism + xizmat) so'mda taxmin qil.
-        
+        1. XAVFSIZLIK: Agar rasmda ochiq simlar, gaz yoki suv toshqini bo'lsa, birinchi bo'lib "OGOHLANTIRISH" ber.
+        2. TASHXIS: Nima buzilgan? Aniq texnik nomini ayt.
+        3. YECHIM: Oddiy bo'lsa tushuntir, qiyin bo'lsa usta chaqir de.
+        4. NARX: O'zbekiston bozoridagi o'rtacha narxni taxmin qil.
         Javobni chiroyli va lo'nda qilib, O'zbek tilida yoz.
         """
 
@@ -211,7 +216,7 @@ async def ai_vision(message: types.Message):
             ]}
         ]
         
-        # ENG KUCHLI VISION MODEL (90b)
+        # MODELNI ISHONCHLI VARIANTGA QAYTARDIM (XATO BERMASLIGI UCHUN)
         completion = client.chat.completions.create(
             model="meta-llama/llama-4-scout-17b-16e-instruct", 
             messages=messages,
@@ -226,10 +231,10 @@ async def ai_vision(message: types.Message):
     finally:
         if os.path.exists(file_path): os.remove(file_path)
 
-# B) OVOZ VA MATN (CHAT AGENT)
+# B) OVOZ VA MATN (AGENTS + SEARCH)
 @dp.message(F.text | F.voice)
 async def ai_agent(message: types.Message):
-    wait = await message.answer("🤔 Tushundim, yechim qidiryapman...")
+    wait = await message.answer("🌐 <b>Internet va Bazadan qidiryapman...</b>")
     
     try:
         user_input = message.text
@@ -239,21 +244,40 @@ async def ai_agent(message: types.Message):
             file = await bot.get_file(message.voice.file_id)
             await bot.download_file(file.file_path, file_path)
             
-            # Whisper (Ovozni matnga aylantirish)
             with open(file_path, "rb") as f:
                 user_input = client.audio.transcriptions.create(
                     file=(file_path, f.read()), 
                     model="whisper-large-v3"
                 ).text
             os.remove(file_path)
-            await message.answer(f"🗣 <b>Siz aytdingiz:</b> <i>{user_input}</i>")
+            await message.answer(f"🗣 <b>Savol:</b> {user_input}")
 
-        # Chat modeli uchun Prompt
-        sys_prompt = "Sen HomeFix ustasisan. Mijoz muammosiga aniq yechim ber. Xavfsizlikni birinchi o'ringa qo'y. Javobni O'zbek tilida ber."
+        # --- SEARCH LOGIKASI ---
+        keywords = ["narx", "qancha", "sotib", "texnomart", "olx", "bozor", "qayerda", "kim", "ob-havo", "dollor"]
+        search_result = ""
+        
+        # Agar savolda kalit so'zlar bo'lsa, internetdan qidiramiz
+        if any(word in user_input.lower() for word in keywords):
+            search_result = search_internet(user_input)
+
+        # AGENT PROMPT
+        sys_prompt = f"""
+        Sen "HomeFix AI" universal yordamchisisan.
+        
+        Senda hozirgina INTERNETDAN olingan ma'lumotlar bor:
+        ----------------
+        {search_result}
+        ----------------
+        
+        VAZIFANG:
+        1. Agar internet ma'lumotlari (search_result) savolga mos kelsa, o'shalardan foydalanib javob ber.
+        2. Narxlarni aytganda, aniq manbani ayt (Masalan: "Internetdagi ma'lumotlarga ko'ra...").
+        3. Agar internetda hech narsa bo'lmasa, o'z bilimingdan foydalan.
+        4. Javobni O'ZBEK tilida, lo'nda va foydali qilib ber.
+        """
         
         update_context(message.from_user.id, "user", user_input)
         
-        # ENG KUCHLI MATN MODEL (70b)
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "system", "content": sys_prompt}] + list(user_context[message.from_user.id])
@@ -273,9 +297,7 @@ async def ai_agent(message: types.Message):
 async def main():
     init_db()
     logging.basicConfig(level=logging.INFO)
-    # Web server va Bot birga ishlaydi
     await asyncio.gather(start_web_server(), dp.start_polling(bot))
 
 if __name__ == "__main__":
     asyncio.run(main())
-
