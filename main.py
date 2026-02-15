@@ -1,7 +1,3 @@
-HomeFix AI Pro - Complete Bot
-Professional home services AI assistant
-"""
-
 import asyncio
 import logging
 import os
@@ -25,488 +21,321 @@ from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 
 from groq import Groq
+from duckduckgo_search import DDGS  # Qaytarildi!
 
 # =============================================================================
-# CONFIGURATION
+# 1. SOZLAMALAR VA REAL BOZOR BAZASI
 # =============================================================================
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore"
-    )
-    
-    bot_token: "7978174707:AAFjHjK1tB9AsY1yloTS-9vmykiJ8BacZPs"
-    admin_id:  1967786876 
-    groq_api_key:  "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"
-    payment_token: "371317599:TEST:1770638863894"
+    bot_token: str = "7978174707:AAFjHjK1tB9AsY1yloTS-9vmykiJ8BacZPs"
+    admin_id: int = 1967786876 
+    groq_api_key: str = "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"
+    payment_token: str = "371317599:TEST:1770638863894"
     database_url: str = "sqlite+aiosqlite:///homefix_pro.db"
-    debug: bool = False
-    log_level: str = "INFO"
-    max_requests_per_minute: int = 20
-    port: int = 8080
     
     PREMIUM_PRICE: int = 50000
     PREMIUM_AMOUNT: int = 5000000
+    port: int = 8080
 
 settings = Settings()
 
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, settings.log_level),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# O'ZBEKISTON QURILISH MATERIALLARI NARXLARI (2026)
+MARKET_DB = {
+    "devor": {
+        "oboy_oddiy": "Roloni (10m) 150,000 - 250,000 so'm",
+        "emulsiya": "20kg chelak - 400,000 so'm",
+        "gish_pishgan": "1 dona - 1,800 so'm"
+    },
+    "pol": {
+        "laminat_32": "1 kv.m - 75,000 so'm",
+        "laminat_33": "1 kv.m - 110,000 so'm",
+        "kafel": "1 kv.m - 90,000 - 250,000 so'm"
+    },
+    "elektr": {
+        "kabel_2x2_5": "1 metr - 8,500 so'm",
+        "rozetka": "1 dona - 35,000 so'm"
+    }
+}
+
+logging.basicConfig(level="INFO", format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# DATABASE SETUP
+# 2. DATABASE (SQLAlchemy)
 # =============================================================================
 
 Base = declarative_base()
-
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.debug,
-    future=True
-)
-
-AsyncSessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False
-)
-
-# =============================================================================
-# DATABASE MODELS
-# =============================================================================
+engine = create_async_engine(settings.database_url, echo=False)
+AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 class User(Base):
     __tablename__ = "users"
-    
     user_id = Column(Integer, primary_key=True, index=True)
     username = Column(String(255), nullable=True)
     full_name = Column(String(255), nullable=False)
-    phone = Column(String(20), nullable=True)
     is_premium = Column(Boolean, default=False)
-    premium_until = Column(DateTime, nullable=True)
     total_requests = Column(Integer, default=0)
     joined_date = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, onupdate=func.now())
-
 
 class Master(Base):
     __tablename__ = "masters"
-    
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=True) # Telegram ID
     name = Column(String(255), nullable=False)
     profession = Column(String(100), nullable=False)
     phone = Column(String(20), nullable=False)
-    city = Column(String(100), nullable=False)
     rating = Column(Float, default=5.0)
-    total_jobs = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, server_default=func.now())
-
 
 class Request(Base):
     __tablename__ = "requests"
-    
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, nullable=False, index=True)
+    user_id = Column(Integer, nullable=False)
     request_type = Column(String(50))
     request_text = Column(Text, nullable=True)
-    ai_model = Column(String(50))
     response_text = Column(Text)
-    response_time = Column(Float)
     created_at = Column(DateTime, server_default=func.now())
 
-# =============================================================================
-# DATABASE INITIALIZATION
-# =============================================================================
-
 async def init_db():
-    try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("✅ Database initialized")
-        
-        # Add sample masters if empty
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(select(Master))
-            if not result.scalars().first():
-                masters = [
-                    Master(name="Ali Usta", profession="Santexnik", phone="+998901234567", city="Toshkent"),
-                    Master(name="Vali Usta", profession="Elektrik", phone="+998939876543", city="Samarqand"),
-                    Master(name="G'ani Usta", profession="Maishiy texnika", phone="+998971112233", city="Buxoro")
-                ]
-                session.add_all(masters)
-                await session.commit()
-                logger.info("✅ Sample masters added")
-    except Exception as e:
-        logger.error(f"❌ Database error: {e}")
-        raise
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("✅ Bazalar yaratildi")
 
 # =============================================================================
-# AI SERVICE
+# 3. AI MANTIQI (GROQ + DUCKDUCKGO + VISION)
 # =============================================================================
 
 groq_client = Groq(api_key=settings.groq_api_key)
 user_context = {}
 
 def update_context(user_id: int, role: str, content: str):
-    if user_id not in user_context:
-        user_context[user_id] = deque(maxlen=10)
+    if user_id not in user_context: user_context[user_id] = deque(maxlen=5)
     user_context[user_id].append({"role": role, "content": content})
 
 def encode_image(image_path: str) -> str:
-    with open(image_path, "rb") as f:
-        return base64.b64encode(f.read()).decode('utf-8')
+    with open(image_path, "rb") as f: return base64.b64encode(f.read()).decode('utf-8')
 
-async def ai_text_response(user_id: int, user_input: str) -> tuple[str, float]:
-    system_prompt = """
-Sen HomeFix Pro - professional usta va muhandissan. 
-Vazifang: Foydalanuvchi muammosini hal qilish.
+# INTERNET QIDIRUVI
+def search_internet(query):
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, region="uz-uz", max_results=3))
+            if not results: return ""
+            return "\n".join([f"- {r['title']}: {r['body']}" for r in results])
+    except: return ""
 
-Qoidalar:
-1. Faqat O'ZBEK tilida javob ber.
-2. Javobing aniq, qisqa va foydali bo'lsin.
-3. Agar muammo xavfli bo'lsa (gaz, tok), avval xavfsizlik haqida ogohlantir.
-4. Javobni chiroyli formatda yoz.
-"""
+async def ai_text_response(user_id: int, user_input: str) -> str:
+    # 1. Internetdan qidirish (agar kerak bo'lsa)
+    search_res = ""
+    if any(w in user_input.lower() for w in ["narx", "qancha", "iphone", "dollar", "yangilik", "2026"]):
+        search_res = search_internet(user_input + " narxi 2026 uzbekistan")
+
+    # 2. Tizim Prompti (Market DB + Sana)
+    system_prompt = f"""
+    Sen HomeFix Pro (v2.0)san. Bugungi sana: {datetime.now().strftime('%d-%m-%Y')}.
+    
+    QO'LINGDAGI MA'LUMOTLAR:
+    1. Real Bozor Narxlari (Baza): {MARKET_DB}
+    2. Internet Yangiliklari: {search_res}
+    
+    VAZIFA:
+    - Odamlarga "Aka" kabi samimiy maslahat ber.
+    - Narx so'rasa, bazadan yoki internetdan qarab ayt. 
+    - Agar qurilish materiali (oboy, g'isht) so'rasa, o'lchamini so'ra va hisoblab ber.
+    - Javob faqat O'ZBEK tilida bo'lsin.
+    """
     
     try:
         update_context(user_id, "user", user_input)
         history = [{"role": "system", "content": system_prompt}] + list(user_context.get(user_id, []))
         
-        start_time = time.time()
         completion = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=history,
-            temperature=0.7,
-            max_tokens=1500
+            temperature=0.7
         )
-        response_time = time.time() - start_time
-        
         response = completion.choices[0].message.content
         update_context(user_id, "assistant", response)
-        
-        return response, response_time
+        return response
     except Exception as e:
-        logger.error(f"AI Error: {e}")
-        return f"❌ Xatolik yuz berdi: {str(e)}", 0.0
+        return f"Xatolik: {e}"
 
 async def ai_vision_response(image_path: str) -> str:
     try:
-        base64_image = encode_image(image_path)
-        
+        base64_img = encode_image(image_path)
         messages = [{
-            "role": "user",
+            "role": "user", 
             "content": [
-                {"type": "text", "text": "Bu rasmdagi texnik muammoni aniqla va O'ZBEK tilida bosqichma-bosqich yechim ber. Usta kabi gapir."},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                {"type": "text", "text": "Rasmga qarab muammoni, modelni va O'zbekiston bozoridagi narxini (2026) ayt."},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}}
             ]
         }]
-        
-        completion = groq_client.chat.completions.create(
-            model="llama-3.2-90b-vision-preview",
-            messages=messages,
-            temperature=0.7,
-            max_tokens=2000
-        )
-        
+        completion = groq_client.chat.completions.create(model="llama-3.2-90b-vision-preview", messages=messages)
         return completion.choices[0].message.content
-    except Exception as e:
-        logger.error(f"Vision AI Error: {e}")
-        return f"❌ Rasm tahlilida xatolik: {str(e)}"
-
-async def ai_voice_transcription(audio_path: str) -> str:
-    try:
-        with open(audio_path, "rb") as f:
-            transcription = groq_client.audio.transcriptions.create(
-                file=(audio_path, f.read()),
-                model="whisper-large-v3",
-                response_format="text"
-            )
-        return transcription
-    except Exception as e:
-        logger.error(f"Voice transcription error: {e}")
-        return ""
+    except Exception as e: return f"Rasm xatosi: {e}"
 
 # =============================================================================
-# KEYBOARDS
-# =============================================================================
-
-def main_menu_kb():
-    kb = ReplyKeyboardBuilder()
-    kb.button(text="🛠 Muammo yechish")
-    kb.button(text="👤 Profilim")
-    kb.button(text="💎 Premium Panel")
-    kb.button(text="📞 Usta kerak")
-    kb.adjust(2, 2)
-    return kb.as_markup(resize_keyboard=True)
-
-def premium_kb():
-    kb = InlineKeyboardBuilder()
-    kb.button(text="💳 Sotib olish (50,000 so'm)", callback_data="buy_premium")
-    kb.button(text="ℹ️ Imkoniyatlar", callback_data="premium_info")
-    return kb.as_markup()
-
-# =============================================================================
-# BOT HANDLERS
+# 4. BOT HANDLERS
 # =============================================================================
 
 router = Router()
 
+def main_menu():
+    kb = ReplyKeyboardBuilder()
+    kb.button(text="🛠 Muammo yechish")
+    kb.button(text="🧮 Material Hisoblash")
+    kb.button(text="👷‍♂️ Men Ustaman")
+    kb.button(text="👤 Profilim")
+    kb.button(text="💎 Premium Panel")
+    kb.adjust(2, 2, 1)
+    return kb.as_markup(resize_keyboard=True)
+
+def calc_menu():
+    kb = ReplyKeyboardBuilder()
+    kb.button(text="🧱 Devor")
+    kb.button(text="🪵 Pol")
+    kb.button(text="⚡ Elektr")
+    kb.button(text="🔙 Bosh menyu")
+    kb.adjust(3, 1)
+    return kb.as_markup(resize_keyboard=True)
+
+def master_reg_menu():
+    kb = ReplyKeyboardBuilder()
+    kb.button(text="🚰 Santexnik")
+    kb.button(text="⚡ Elektrik")
+    kb.button(text="🏠 Universal")
+    kb.button(text="🔙 Bosh menyu")
+    kb.adjust(2, 2)
+    return kb.as_markup(resize_keyboard=True)
+
 @router.message(Command("start"))
 async def cmd_start(message: Message):
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(User).where(User.user_id == message.from_user.id))
-        user = result.scalar_one_or_none()
-        
-        if not user:
-            user = User(
-                user_id=message.from_user.id,
-                username=message.from_user.username,
-                full_name=message.from_user.full_name
-            )
-            session.add(user)
+        if not await session.scalar(select(User).where(User.user_id == message.from_user.id)):
+            session.add(User(user_id=message.from_user.id, full_name=message.from_user.full_name))
             await session.commit()
-            logger.info(f"New user: {message.from_user.id}")
     
-    await message.answer(
-        f"🏠 <b>Assalomu alaykum, {message.from_user.first_name}!</b>\n\n"
-        "Men <b>HomeFix Pro</b> — uyingizdagi har qanday texnik muammoni hal qiluvchi aqlli yordamchiman.\n\n"
-        "👇 <i>Quyidagi bo'limlardan birini tanlang:</i>",
-        reply_markup=main_menu_kb()
-    )
+    txt = f"🏠 <b>Salom, {message.from_user.first_name}!</b>\nMen HomeFix Pro — Uyingizdagi Sun'iy Ong."
+    if message.from_user.id == settings.admin_id: txt += "\n👑 <b>Xo'jayin, sizga cheklov yo'q!</b>"
+    await message.answer(txt, reply_markup=main_menu())
 
-@router.message(F.text == "👤 Profilim")
-async def show_profile(message: Message):
+# --- KALKULYATOR ---
+@router.message(F.text == "🧮 Material Hisoblash")
+async def show_calc(message: Message):
+    await message.answer("Nimani hisoblaymiz?", reply_markup=calc_menu())
+
+@router.message(F.text.in_({"🧱 Devor", "🪵 Pol", "⚡ Elektr"}))
+async def calc_logic(message: Message):
+    update_context(message.from_user.id, "system", f"Foydalanuvchi {message.text} hisoblamoqchi.")
+    await message.answer(f"✅ {message.text} tanlandi. O'lchamlarni yozing (masalan: 4x5 xona):", reply_markup=ReplyKeyboardBuilder().button(text="🔙 Bosh menyu").as_markup(resize_keyboard=True))
+
+# --- USTA RO'YXATI ---
+@router.message(F.text == "👷‍♂️ Men Ustaman")
+async def master_reg(message: Message):
+    await message.answer("Sohangizni tanlang:", reply_markup=master_reg_menu())
+
+@router.message(F.text.in_({"🚰 Santexnik", "⚡ Elektrik", "🏠 Universal"}))
+async def master_save(message: Message):
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(User).where(User.user_id == message.from_user.id))
-        user = result.scalar_one_or_none()
-        
-        if user:
-            status = "💎 Premium" if user.is_premium else "🆓 Bepul"
-            text = (
-                f"📂 <b>Sizning Profilingiz:</b>\n\n"
-                f"👤 Ism: {user.full_name}\n"
-                f"🆔 ID: {user.user_id}\n"
-                f"🌟 Status: <b>{status}</b>\n"
-                f"📊 So'rovlar: {user.total_requests}\n"
-                f"📅 Qo'shilgan: {user.joined_date.strftime('%d.%m.%Y')}"
-            )
-            await message.answer(text)
+        session.add(Master(user_id=message.from_user.id, name=message.from_user.full_name, profession=message.text, phone="Noma'lum"))
+        await session.commit()
+    await message.answer("✅ Bazaga qo'shildingiz!", reply_markup=main_menu())
+
+# --- PROFIL VA PREMIUM ---
+@router.message(F.text == "👤 Profilim")
+async def profile(message: Message):
+    async with AsyncSessionLocal() as session:
+        user = await session.scalar(select(User).where(User.user_id == message.from_user.id))
+        status = "👑 ADMIN" if user.user_id == settings.admin_id else ("💎 Premium" if user.is_premium else "oddi")
+        await message.answer(f"👤 <b>{user.full_name}</b>\nStatus: {status}\nSo'rovlar: {user.total_requests}")
 
 @router.message(F.text == "💎 Premium Panel")
-async def show_premium(message: Message):
-    text = (
-        "💎 <b>HomeFix Premium</b>\n\n"
-        "✅ Cheksiz AI so'rovlar\n"
-        "✅ Rasm va Ovozli xabarlar tahlili\n"
-        "✅ Eng kuchli AI model\n"
-        "✅ Priority support\n"
-        "✅ Reklamasiz\n\n"
-        f"💰 <b>Narxi: {settings.PREMIUM_PRICE:,} so'm / oy</b>"
-    )
-    await message.answer(text, reply_markup=premium_kb())
+async def premium(message: Message):
+    if message.from_user.id == settings.admin_id: return await message.answer("Sizga tekin!")
+    await message.answer("💎 Premium narxi: 50,000 so'm", reply_markup=InlineKeyboardBuilder().button(text="Sotib olish", callback_data="buy").as_markup())
 
-@router.callback_query(F.data == "buy_premium")
-async def process_premium_buy(callback: CallbackQuery):
-    await callback.message.bot.send_invoice(
-        chat_id=callback.from_user.id,
-        title="HomeFix Premium",
-        description="1 oylik to'liq foydalanish",
-        payload="premium_subscription",
-        provider_token=settings.payment_token,
-        currency="uzs",
-        prices=[LabeledPrice(label="Obuna", amount=settings.PREMIUM_AMOUNT)],
-        start_parameter="premium-sub"
-    )
-    await callback.answer()
+@router.callback_query(F.data == "buy")
+async def buy(cb: CallbackQuery):
+    await cb.message.bot.send_invoice(cb.from_user.id, "Premium", "1 oy", "payload", settings.payment_token, "uzs", [LabeledPrice(label="Obuna", amount=5000000)])
 
 @router.pre_checkout_query()
-async def process_pre_checkout(query: PreCheckoutQuery):
-    await query.answer(ok=True)
+async def pre_checkout(q: PreCheckoutQuery): await q.answer(ok=True)
 
 @router.message(F.successful_payment)
-async def process_successful_payment(message: Message):
+async def success_pay(msg: Message):
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(User).where(User.user_id == message.from_user.id))
-        user = result.scalar_one_or_none()
-        
-        if user:
-            user.is_premium = True
-            await session.commit()
-    
-    await message.answer("🎉 <b>Tabriklaymiz!</b> Siz endi Premium foydalanuvchisiz!")
+        user = await session.scalar(select(User).where(User.user_id == msg.from_user.id))
+        user.is_premium = True
+        await session.commit()
+    await msg.answer("🎉 Premium olindi!")
 
-@router.message(F.text == "📞 Usta kerak")
-async def show_masters(message: Message):
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(select(Master).where(Master.is_active == True))
-        masters = result.scalars().all()
-        
-        if masters:
-            text = "👷‍♂️ <b>Bizning eng yaxshi ustalarimiz:</b>\n\n"
-            for m in masters:
-                text += f"▪️ <b>{m.name}</b> ({m.profession}) - {m.city}\n"
-                text += f"📞 Tel: {m.phone}\n"
-                text += f"⭐ Reyting: {m.rating:.1f} ({m.total_jobs} ish)\n\n"
-            await message.answer(text)
-        else:
-            await message.answer("❌ Hozircha ustalar mavjud emas.")
-
-@router.message(F.text == "🛠 Muammo yechish")
-async def ask_problem(message: Message):
-    await message.answer(
-        "Men tayyorman! 🎤 <b>Gapiring</b>, 📸 <b>Rasm tashlang</b> yoki 📝 <b>Yozing</b>.\n\n"
-        "Muammo nimada?"
-    )
-
+# --- AI HANDLERS (TEXT, VOICE, PHOTO) ---
 @router.message(F.photo)
 async def handle_photo(message: Message):
-    wait_msg = await message.answer("🧐 <i>Rasm tahlil qilinmoqda...</i>")
+    # Admin yoki Premium tekshiruvi
+    async with AsyncSessionLocal() as session:
+        user = await session.scalar(select(User).where(User.user_id == message.from_user.id))
+        if message.from_user.id != settings.admin_id and not user.is_premium:
+            return await message.answer("🔒 Rasm tahlili faqat Premium uchun!")
+
+    wait = await message.answer("🧐 Tahlil qilinmoqda...")
+    path = f"img_{message.from_user.id}.jpg"
+    await message.bot.download(message.photo[-1], destination=path)
+    resp = await ai_vision_response(path)
+    os.remove(path)
     
-    file_path = f"img_{message.from_user.id}.jpg"
-    try:
-        photo = await message.bot.get_file(message.photo[-1].file_id)
-        await message.bot.download_file(photo.file_path, file_path)
+    # Bazaga yozish
+    async with AsyncSessionLocal() as session:
+        session.add(Request(user_id=message.from_user.id, request_type="photo", response_text=resp))
+        await session.commit()
         
-        response = await ai_vision_response(file_path)
-        
-        async with AsyncSessionLocal() as session:
-            request = Request(
-                user_id=message.from_user.id,
-                request_type="photo",
-                ai_model="llama-vision",
-                response_text=response,
-                response_time=0.0
-            )
-            session.add(request)
-            await session.commit()
-        
-        await wait_msg.edit_text(f"📸 <b>Tahlil natijalari:</b>\n\n{response}")
-    except Exception as e:
-        logger.error(f"Photo error: {e}")
-        await wait_msg.edit_text(f"❌ Xatolik: {str(e)}")
-    finally:
-        if os.path.exists(file_path):
-            os.remove(file_path)
+    await wait.delete()
+    await message.answer(resp, reply_markup=main_menu())
 
-@router.message(F.voice)
-async def handle_voice(message: Message):
-    wait_msg = await message.answer("🎤 <i>Ovoz tanilmoqda...</i>")
+@router.message(F.text | F.voice)
+async def handle_all(message: Message):
+    if message.text in ["🔙 Bosh menyu", "🛠 Muammo yechish"]: return await message.answer("Menyuni tanlang", reply_markup=main_menu())
+
+    wait = await message.answer("🌐 ...")
+    text = message.text
+    if message.voice:
+        path = f"voice_{message.from_user.id}.ogg"
+        await message.bot.download(message.voice, destination=path)
+        with open(path, "rb") as f: text = groq_client.audio.transcriptions.create(file=(path, f.read()), model="whisper-large-v3").text
+        os.remove(path)
+        await message.answer(f"🗣 {text}")
+
+    resp = await ai_text_response(message.from_user.id, text)
     
-    file_path = f"voice_{message.from_user.id}.ogg"
-    try:
-        file = await message.bot.get_file(message.voice.file_id)
-        await message.bot.download_file(file.file_path, file_path)
-        
-        transcription = await ai_voice_transcription(file_path)
-        
-        if transcription:
-            await message.answer(f"🗣 <b>Siz aytdingiz:</b> {transcription}")
-            response, response_time = await ai_text_response(message.from_user.id, transcription)
-            
-            async with AsyncSessionLocal() as session:
-                request = Request(
-                    user_id=message.from_user.id,
-                    request_type="voice",
-                    request_text=transcription,
-                    ai_model="groq",
-                    response_text=response,
-                    response_time=response_time
-                )
-                session.add(request)
-                await session.commit()
-            
-            await wait_msg.edit_text(response)
-        else:
-            await wait_msg.edit_text("❌ Ovozni tanib bo'lmadi.")
-    except Exception as e:
-        logger.error(f"Voice error: {e}")
-        await wait_msg.edit_text(f"❌ Xatolik: {str(e)}")
-    finally:
-        if os.path.exists(file_path):
-            os.remove(file_path)
+    async with AsyncSessionLocal() as session:
+        session.add(Request(user_id=message.from_user.id, request_type="text", request_text=text, response_text=resp))
+        user = await session.scalar(select(User).where(User.user_id == message.from_user.id))
+        user.total_requests += 1
+        await session.commit()
 
-@router.message(F.text)
-async def handle_text(message: Message):
-    if message.text in ["🛠 Muammo yechish", "👤 Profilim", "💎 Premium Panel", "📞 Usta kerak"]:
-        return
-    
-    wait_msg = await message.answer("🤔 <i>O'ylayapman...</i>")
-    
-    try:
-        response, response_time = await ai_text_response(message.from_user.id, message.text)
-        
-        async with AsyncSessionLocal() as session:
-            request = Request(
-                user_id=message.from_user.id,
-                request_type="text",
-                request_text=message.text,
-                ai_model="groq",
-                response_text=response,
-                response_time=response_time
-            )
-            session.add(request)
-            
-            result = await session.execute(select(User).where(User.user_id == message.from_user.id))
-            user = result.scalar_one_or_none()
-            if user:
-                user.total_requests += 1
-            
-            await session.commit()
-        
-        await wait_msg.edit_text(response)
-    except Exception as e:
-        logger.error(f"Text error: {e}")
-        await wait_msg.edit_text(f"❌ Xatolik: {str(e)}")
-
-# =============================================================================
-# WEB SERVER (for hosting)
-# =============================================================================
-
-async def handle_web(request):
-    return web.Response(text="🏠 HomeFix Pro is Running!")
-
-async def start_web_server():
-    app = web.Application()
-    app.router.add_get('/', handle_web)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', settings.port)
-    await site.start()
-    logger.info(f"🌐 Web server started on port {settings.port}")
+    await wait.delete()
+    await message.answer(resp, reply_markup=main_menu())
 
 # =============================================================================
 # MAIN
 # =============================================================================
 
+async def handle_web(request): return web.Response(text="Running!")
+
 async def main():
-    logger.info("🚀 HomeFix Pro starting...")
-    
-    # Initialize bot
+    await init_db()
     bot = Bot(token=settings.bot_token, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher()
     dp.include_router(router)
     
-    # Initialize database
-    await init_db()
+    app = web.Application()
+    app.router.add_get('/', handle_web)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    await web.TCPSite(runner, '0.0.0.0', settings.port).start()
     
-    # Start web server and bot
-    await asyncio.gather(
-        start_web_server(),
-        dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
-    )
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("👋 Bot stopped")
-    except Exception as e:
-        logger.error(f"❌ Fatal error: {e}")
+    asyncio.run(main())
