@@ -1,5 +1,8 @@
-aiogram
+aiogram>=3.0.0
 groq
-gtts
 duckduckgo-search
+sqlalchemy
+aiosqlite
+pydantic
+pydantic-settings
 aiohttp
