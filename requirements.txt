@@ -3,6 +3,5 @@ groq
 duckduckgo-search
 sqlalchemy
 aiosqlite
-pydantic
-pydantic-settings
 aiohttp
+python-multipart
