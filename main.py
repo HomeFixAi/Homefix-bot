@@ -17,7 +17,7 @@ from aiohttp import web
 # ==========================================================
 BOT_TOKEN = "7978174707:AAFjHjK1tB9AsY1yloTS-9vmykiJ8BacZPs"
 PAYMENT_TOKEN = "371317599:TEST:1770638863894" 
-GROQ_API_KEY = "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"
+GROQ_API_KEY = "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"
 ADMIN_ID = 1967786876
 
 # Tizimni sozlash
@@ -295,3 +295,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
