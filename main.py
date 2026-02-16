@@ -1,4 +1,3 @@
-
 import asyncio
 import logging
 import sqlite3
@@ -9,7 +8,7 @@ from groq import Groq
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
-from aiogram.types import FSInputFile, LabeledPrice, PreCheckoutQuery, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import FSInputFile, LabeledPrice, PreCheckoutQuery
 from aiogram.client.default import DefaultBotProperties
 from aiohttp import web
 
@@ -17,7 +16,7 @@ from aiohttp import web
 # 1. SOZLAMALAR (TOKENLAR)
 # ==========================================================
 BOT_TOKEN = "7978174707:AAFjHjK1tB9AsY1yloTS-9vmykiJ8BacZPs"
-PAYMENT_TOKEN = "371317599:TEST:1770638863894" # Click/Payme Test tokeni
+PAYMENT_TOKEN = "371317599:TEST:1770638863894" 
 GROQ_API_KEY = "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"
 ADMIN_ID = 1967786876
 
@@ -63,14 +62,16 @@ def init_db():
 
 def register_user(user):
     conn = sqlite3.connect('homefix_pro.db')
-    conn.execute("INSERT OR IGNORE INTO users (user_id, username, full_name, joined_date) VALUES (?, ?, ?, date('now'))", 
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO users (user_id, username, full_name, joined_date) VALUES (?, ?, ?, date('now'))", 
                  (user.id, user.username, user.full_name))
     conn.commit()
     conn.close()
 
 def get_user_info(user_id):
     conn = sqlite3.connect('homefix_pro.db')
-    user = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
+    cursor = conn.cursor()
+    user = cursor.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return user
 
@@ -102,7 +103,6 @@ def premium_kb():
     kb.button(text="ℹ️ Imkoniyatlar", callback_data="premium_info")
     return kb.as_markup()
 
-☛🖤🕋_𝑆_𝐼_𝑅_𝐿_𝐼🕋🖤☚, [14/02/2026 00:08]
 # ==========================================================
 # 4. BOT MANTIQI (ASOSIY QISM)
 # ==========================================================
@@ -122,13 +122,16 @@ async def start(message: types.Message):
 @dp.message(F.text == "👤 Profilim")
 async def my_profile(message: types.Message):
     user = get_user_info(message.from_user.id)
-    status = "💎 Premium" if user[3] else "bepul"
-    text = (f"📂 <b>Sizning Profilingiz:</b>\n\n"
-            f"👤 Ism: {user[2]}\n"
-            f"🆔 ID: {user[0]}\n"
-            f"🌟 Status: <b>{status}</b>\n"
-            f"📅 Qo'shilgan sana: {user[4]}")
-    await message.answer(text)
+    if user:
+        status = "💎 Premium" if user[3] else "🆓 Bepul"
+        text = (f"📂 <b>Sizning Profilingiz:</b>\n\n"
+                f"👤 Ism: {user[2]}\n"
+                f"🆔 ID: {user[0]}\n"
+                f"🌟 Status: <b>{status}</b>\n"
+                f"📅 Qo'shilgan sana: {user[4]}")
+        await message.answer(text)
+    else:
+        await message.answer("Profil topilmadi. /start ni bosing.")
 
 # --- PREMIUM PANEL ---
 @dp.message(F.text == "💎 Premium Panel")
@@ -136,7 +139,7 @@ async def premium_panel(message: types.Message):
     text = ("💎 <b>HomeFix Premium</b>\n\n"
             "✅ Cheksiz AI so'rovlar\n"
             "✅ Rasm va Ovozli xabarlar tahlili\n"
-            "✅ Eng kuchli 'Claude' rejimi\n"
+            "✅ Eng kuchli 'Vision' rejimi\n"
             "✅ Reklamasiz\n\n"
             "💰 <b>Narxi: 50,000 so'm / oy</b>")
     await message.answer(text, reply_markup=premium_kb())
@@ -150,7 +153,7 @@ async def buy_click(callback: types.CallbackQuery):
         payload="premium_sub",
         provider_token=PAYMENT_TOKEN,
         currency="uzs",
-        prices=[LabeledPrice(label="Obuna", amount=5000000)],
+        prices=[LabeledPrice(label="Obuna", amount=5000000)], # 50 000 so'm
         start_parameter="premium-sub"
     )
     await callback.answer()
@@ -173,18 +176,21 @@ async def find_master(message: types.Message):
     conn = sqlite3.connect('homefix_pro.db')
     masters = conn.execute("SELECT name, profession, phone, city FROM masters").fetchall()
     conn.close()
-    text = "👷‍♂️ <b>Bizning eng yaxshi ustalarimiz:</b>\n\n"
-    for m in masters:
-        text += f"▪️ <b>{m[0]}</b> ({m[1]}) - {m[3]}\n📞 Tel: {m[2]}\n\n"
-    await message.answer(text)
+    
+    if masters:
+        text = "👷‍♂️ <b>Bizning eng yaxshi ustalarimiz:</b>\n\n"
+        for m in masters:
+            text += f"▪️ <b>{m[0]}</b> ({m[1]}) - {m[3]}\n📞 Tel: {m[2]}\n\n"
+        await message.answer(text)
+    else:
+        await message.answer("Hozircha ustalar ro'yxati bo'sh.")
 
 # --- AI MUAMMO YECHISH (OVOZ, RASM, TEXT) ---
 @dp.message(F.text == "🛠 Muammo yechish")
 async def ask_problem(message: types.Message):
     await message.answer("Men tayyorman! 🎤 <b>Gapiring</b>, 📸 <b>Rasm tashlang</b> yoki 📝 <b>Yozing</b>.\n\nMuammo nimada?")
 
-☛🖤🕋_𝑆_𝐼_𝑅_𝐿_𝐼🕋🖤☚, [14/02/2026 00:08]
-# 1. RASM TAHLILI (Llama Vision)
+# 1. RASM TAHLILI (Llama Vision 3.2 - Stable)
 @dp.message(F.photo)
 async def ai_vision(message: types.Message):
     wait = await message.answer("🧐 <i>Rasm tahlil qilinmoqda (bu biroz vaqt oladi)...</i>")
@@ -197,40 +203,55 @@ async def ai_vision(message: types.Message):
         # System prompt - rasm uchun
         messages = [
             {"role": "user", "content": [
-                {"type": "text", "text": "Bu rasmdagi texnik muammoni aniqla va O'ZBEK tilida bosqichma-bosqich yechim ber. Usta kabi gapir."},
+                {"type": "text", "text": "Bu rasmdagi texnik muammoni aniqla, uning modelini topishga harakat qil va O'ZBEK tilida bosqichma-bosqich yechim ber. Usta kabi gapir."},
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
             ]}
         ]
-        completion = client.chat.completions.create(model="meta-llama/llama-4-scout-17b-16e-instruct", messages=messages)
-        await wait.edit_text(f"📸 <b>Xulosa:</b>\n\n{completion.choices[0].message.content}")
+        
+        # MODEL YANGILANDI: Barqaror ishlaydigan Vision model
+        completion = client.chat.completions.create(
+            model="llama-3.2-90b-vision-preview", 
+            messages=messages,
+            temperature=0.5,
+            max_tokens=1024
+        )
+        
+        response = completion.choices[0].message.content
+        await wait.edit_text(f"📸 <b>Xulosa:</b>\n\n{response}")
+        
     except Exception as e:
         await wait.edit_text(f"❌ Xatolik: {e}")
     finally:
+        # Faylni o'chirish (Server to'lib ketmasligi uchun)
         if os.path.exists(file_path): os.remove(file_path)
 
 # 2. OVOZ VA TEXT (Universal Aqlli Agent)
 @dp.message(F.text | F.voice)
 async def ai_agent(message: types.Message):
+    # Menyudagi buyruqlarni o'tkazib yuboramiz
+    if message.text in ["🛠 Muammo yechish", "👤 Profilim", "💎 Premium Panel", "📞 Usta kerak"]:
+        return
+
     wait = await message.answer("🤔 <i>O'ylayapman...</i>")
     user_input = ""
+    file_path = f"voice_{message.from_user.id}.ogg"
     
     try:
         # Agar ovoz bo'lsa - matnga aylantiramiz
         if message.voice:
-            file_path = f"voice_{message.from_user.id}.ogg"
             file = await bot.get_file(message.voice.file_id)
             await bot.download_file(file.file_path, file_path)
             with open(file_path, "rb") as f:
                 user_input = client.audio.transcriptions.create(
-                    file=(file_path, f.read()), model="whisper-large-v3", response_format="text"
+                    file=(file_path, f.read()), 
+                    model="whisper-large-v3", 
+                    response_format="text"
                 )
-            os.remove(file_path)
             await message.answer(f"🗣 <b>Siz aytdingiz:</b> {user_input}")
         else:
             user_input = message.text
 
         # AGENT UCHUN MAXSUS "MIYA" (System Prompt)
-        # Bu yerda biz botga "Rol" o'ynashni o'rgatamiz
         system_prompt = """
         Sen HomeFix Pro - professional usta va muhandissan. 
         Vazifang: Foydalanuvchi muammosini hal qilish.
@@ -240,14 +261,17 @@ async def ai_agent(message: types.Message):
         2. Javobing aniq, lo'nda va foydali bo'lsin.
         3. Agar muammo xavfli bo'lsa (gaz, tok), avval xavfsizlik haqida ogohlantir.
         4. Javobni chiroyli formatda (sarlavha, punktlar bilan) yoz.
+        5. Agar foydalanuvchi material narxini so'rasa, taxminiy bozor narxini ayt.
         """
 
         update_context(message.from_user.id, "user", user_input)
-        history = [{"role": "system", "content": system_prompt}] + list(user_context[message.from_user.id])
+        history = [{"role": "system", "content": system_prompt}] + list(user_context.get(message.from_user.id, []))
 
+        # MODEL YANGILANDI: Eng kuchli matn modeli
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile", # Eng kuchli matn modeli
-            messages=history
+            model="llama-3.3-70b-versatile", 
+            messages=history,
+            temperature=0.7
         )
         response = completion.choices[0].message.content
         update_context(message.from_user.id, "assistant", response)
@@ -256,6 +280,9 @@ async def ai_agent(message: types.Message):
 
     except Exception as e:
         await wait.edit_text(f"❌ Uzr, xatolik yuz berdi: {e}")
+    finally:
+        # Ovoz faylini o'chirish
+        if os.path.exists(file_path): os.remove(file_path)
 
 # ==========================================================
 # 5. ISHGA TUSHIRISH
@@ -266,6 +293,5 @@ async def main():
     # Web server va Botni birga yurgizamiz
     await asyncio.gather(start_web_server(), dp.start_polling(bot))
 
-if name == "main":
+if __name__ == "__main__":
     asyncio.run(main())
-
